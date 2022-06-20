@@ -1838,6 +1838,7 @@ class NeuralProphet:
             self.country_holidays_config.init_holidays(df_merged)
 
         dataset = self._create_dataset(df_dict, predict_mode=False)  # needs to be called after set_auto_seasonalities
+        self.dataset_train_loader = dataset
         self.config_train.set_auto_batch_epoch(n_data=len(dataset))
 
         loader = DataLoader(dataset, batch_size=self.config_train.batch_size, shuffle=True)
