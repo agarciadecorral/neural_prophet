@@ -268,6 +268,7 @@ class NeuralProphet:
         changepoints_range=0.9,
         trend_reg=0,
         trend_reg_threshold=False,
+        trend_global_local="global",
         yearly_seasonality="auto",
         weekly_seasonality="auto",
         daily_seasonality="auto",
@@ -626,6 +627,10 @@ class NeuralProphet:
                 metrics with training and potentially evaluation metrics
         """
         df, _, _, _ = df_utils.prep_or_copy_df(df)
+
+        # Creating list of IDs to be used in the local modelling
+        self.id_list = list(df.ID.unique())
+
         if self.fitted is True:
             log.error("Model has already been fitted. Re-fitting may break or produce different results.")
         self.max_lags = df_utils.get_max_num_lags(self.config_covar, self.n_lags)
@@ -1513,6 +1518,7 @@ class NeuralProphet:
             n_lags=self.n_lags,
             num_hidden_layers=self.config_model.num_hidden_layers,
             d_hidden=self.config_model.d_hidden,
+            id_list=self.id_list,
         )
         log.debug(self.model)
         return self.model
@@ -1866,6 +1872,7 @@ class NeuralProphet:
 
         dataset = self._create_dataset(df, predict_mode=False)  # needs to be called after set_auto_seasonalities
         self.config_train.set_auto_batch_epoch(n_data=len(dataset))
+        self.dataset_visualization = dataset
 
         loader = DataLoader(dataset, batch_size=self.config_train.batch_size, shuffle=True)
 
@@ -1925,7 +1932,8 @@ class NeuralProphet:
         self.model.train()
         for i, (inputs, targets, meta) in enumerate(loader):
             # Run forward calculation
-            predicted = self.model.forward(inputs)
+            self.meta_vis_0 = meta
+            predicted = self.model.forward(inputs, **meta)
             self.train_epoch_prediction = predicted
             # Compute loss. no reduction.
             loss = self.config_train.loss_func(predicted, targets)
@@ -2020,7 +2028,7 @@ class NeuralProphet:
         with torch.no_grad():
             self.model.eval()
             for inputs, targets, meta in loader:
-                predicted = self.model.forward(inputs)
+                predicted = self.model.forward(inputs, **meta)
                 val_metrics.update(predicted=predicted.detach(), target=targets.detach())
             val_metrics = val_metrics.compute(save=True)
         return val_metrics
@@ -2081,6 +2089,7 @@ class NeuralProphet:
 
         # set up data loader
         loader = self._init_train_loader(df)
+        self.dataloader_vis = loader
         # set up Metrics
         if self.highlight_forecast_step_n is not None:
             self.metrics.add_specific_target(target_pos=self.highlight_forecast_step_n - 1)
@@ -2453,12 +2462,14 @@ class NeuralProphet:
 
         with torch.no_grad():
             self.model.eval()
-            for inputs, _, _ in loader:
-                predicted = self.model.forward(inputs)
+            ## I add meta here as it will be used. It was not used until the global local approach.
+            for inputs, _, meta in loader:
+                predicted = self.model.forward(inputs, **meta)
                 predicted_vectors.append(predicted.detach().numpy())
 
                 if include_components:
-                    components = self.model.compute_components(inputs)
+                    ## passing meta
+                    components = self.model.compute_components(inputs, meta)
                     if component_vectors is None:
                         component_vectors = {name: [value.detach().numpy()] for name, value in components.items()}
                     else:

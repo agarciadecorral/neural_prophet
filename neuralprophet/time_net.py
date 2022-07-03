@@ -57,6 +57,7 @@ class TimeNet(nn.Module):
         n_lags=0,
         num_hidden_layers=0,
         d_hidden=None,
+        id_list=["__df__"],  # list of identifiers to be used in the model
     ):
         """
         Parameters
@@ -101,6 +102,7 @@ class TimeNet(nn.Module):
         super(TimeNet, self).__init__()
         # General
         self.n_forecasts = n_forecasts
+        self.id_list = id_list
 
         # Bias
         self.bias = new_param(dims=[1])
@@ -109,7 +111,13 @@ class TimeNet(nn.Module):
         self.config_trend = config_trend
         if self.config_trend.growth in ["linear", "discontinuous"]:
             self.segmentwise_trend = self.config_trend.trend_reg == 0
-            self.trend_k0 = new_param(dims=[1])
+
+            # Trend_k0  parameter (for segmentwise trend) based on trend_global_local variable
+            if self.config_trend.trend_global_local == "global":
+                self.trend_k0 = new_param(dims=[1])
+            elif self.config_trend.trend_global_local == "local":
+                self.trend_k0 = nn.ParameterDict({name: new_param(dims=[1]) for name in id_list})
+
             if self.config_trend.n_changepoints > 0:
                 if self.config_trend.changepoints is None:
                     # create equidistant changepoint times, including zero.
@@ -121,7 +129,18 @@ class TimeNet(nn.Module):
                 self.trend_changepoints_t = torch.tensor(
                     self.config_trend.changepoints, requires_grad=False, dtype=torch.float
                 )
-                self.trend_deltas = new_param(dims=[self.config_trend.n_changepoints + 1])  # including first segment
+
+                # Trend Deltas parameters (for segmentwise trend) based on trend_global_local variable
+                if self.config_trend.trend_global_local == "global":
+                    self.trend_deltas = new_param(
+                        dims=[self.config_trend.n_changepoints + 1]
+                    )  # including first segment
+                elif self.config_trend.trend_global_local == "local":
+                    self.trend_deltas = nn.ParameterDict(
+                        {name: new_param(dims=[self.config_trend.n_changepoints + 1]) for name in id_list}
+                    )
+
+                # TO BE DONE: ALFONSO
                 if self.config_trend.growth == "discontinuous":
                     self.trend_m = new_param(dims=[self.config_trend.n_changepoints + 1])  # including first segment
 
@@ -309,7 +328,7 @@ class TimeNet(nn.Module):
 
         return regressor_params[index]
 
-    def _piecewise_linear_trend(self, t):
+    def _piecewise_linear_trend(self, t, meta):
         """Piecewise linear trend, computed segmentwise or with deltas.
 
         Parameters
@@ -322,11 +341,20 @@ class TimeNet(nn.Module):
             torch.Tensor
                 Trend component, same dimensions as input t
         """
+        self.variables_vis_0 = locals()
         past_next_changepoint = t.unsqueeze(2) >= torch.unsqueeze(self.trend_changepoints_t[1:], dim=0)
         segment_id = torch.sum(past_next_changepoint, dim=2)
         current_segment = nn.functional.one_hot(segment_id, num_classes=self.config_trend.n_changepoints + 1)
 
-        k_t = torch.sum(current_segment * torch.unsqueeze(self.trend_deltas, dim=0), dim=2)
+        # Compute k_t. If trend mode is local we need to use meta parameter.
+        # If trend mode is global use a common k_t
+        if self.config_trend.trend_global_local == "local":
+            # k_t = torch.sum(current_segment * torch.unsqueeze(self.trend_deltas['COAST'], dim=0), dim=2)
+            a = [torch.unsqueeze(self.trend_deltas[x], dim=0) for x in meta["df_name"]]
+            a_stacked = torch.stack(a)
+            k_t = torch.sum(current_segment * a_stacked, dim=2)
+        elif self.config_trend.trend_global_local == "global":
+            k_t = torch.sum(current_segment * torch.unsqueeze(self.trend_deltas, dim=0), dim=2)
 
         if not self.segmentwise_trend:
             previous_deltas_t = torch.sum(past_next_changepoint * torch.unsqueeze(self.trend_deltas[:-1], dim=0), dim=2)
@@ -334,19 +362,47 @@ class TimeNet(nn.Module):
 
         if self.config_trend.growth != "discontinuous":
             if self.segmentwise_trend:
-                deltas = self.trend_deltas[:] - torch.cat((self.trend_k0, self.trend_deltas[0:-1]))
+                ## Different coding if local or global. TO BE CHANGED
+                if self.config_trend.trend_global_local == "local":
+                    # deltas = self.trend_deltas['COAST'][:] - torch.cat((self.trend_k0['COAST'], self.trend_deltas['COAST'][0:-1]))
+                    dict_deltas = {
+                        name: self.trend_deltas[name][:]
+                        - torch.cat((self.trend_k0[name], self.trend_deltas[name][0:-1]))
+                        for name in self.id_list
+                    }
+                elif self.config_trend.trend_global_local == "global":
+                    deltas = self.trend_deltas[:] - torch.cat((self.trend_k0, self.trend_deltas[0:-1]))
+
             else:
                 deltas = self.trend_deltas
-            gammas = -self.trend_changepoints_t[1:] * deltas[1:]
-            m_t = torch.sum(past_next_changepoint * gammas, dim=2)
+
+            ## Different coding if local or global. TO BE CHANGED
+            if self.config_trend.trend_global_local == "local":
+                dict_gammas = {
+                    name: -self.trend_changepoints_t[1:] * deltas[1:] for name, deltas in dict_deltas.items()
+                }
+                b = [torch.unsqueeze(dict_gammas[name], dim=0) for name in meta["df_name"]]
+                b_stacked = torch.stack(b)
+                m_t = torch.sum(past_next_changepoint * b_stacked, dim=2)
+            elif self.config_trend.trend_global_local == "global":
+                gammas = -self.trend_changepoints_t[1:] * deltas[1:]
+                m_t = torch.sum(past_next_changepoint * gammas, dim=2)
+
             if not self.segmentwise_trend:
                 m_t = m_t.detach()
         else:
             m_t = torch.sum(current_segment * torch.unsqueeze(self.trend_m, dim=0), dim=2)
 
-        return (self.trend_k0 + k_t) * t + m_t
+        self.variables_vis = locals()
 
-    def trend(self, t):
+        if self.config_trend.trend_global_local == "local":
+            c = [self.trend_k0[name] for name in meta["df_name"]]
+            c_stacked = torch.stack(c)
+            return (c_stacked + k_t) * t + m_t
+        elif self.config_trend.trend_global_local == "global":
+            return (self.trend_k0 + k_t) * t + m_t
+
+    def trend(self, t, meta):
         """Computes trend based on model configuration.
 
         Parameters
@@ -365,7 +421,7 @@ class TimeNet(nn.Module):
         elif int(self.config_trend.n_changepoints) == 0:
             trend = self.trend_k0 * t
         else:
-            trend = self._piecewise_linear_trend(t)
+            trend = self._piecewise_linear_trend(t, meta)
         return self.bias + trend
 
     def seasonality(self, features, name):
@@ -490,7 +546,7 @@ class TimeNet(nn.Module):
                 x = x + self.covariate(lags=covariates[name], name=name)
         return x
 
-    def forward(self, inputs):
+    def forward(self, inputs, **meta):
         """This method defines the model forward pass.
 
         Note
@@ -558,11 +614,12 @@ class TimeNet(nn.Module):
                     inputs["regressors"]["multiplicative"], self.regressor_params["multiplicative"]
                 )
 
-        trend = self.trend(t=inputs["time"])
+        self.meta_vis = meta
+        trend = self.trend(t=inputs["time"], meta=meta)
         out = trend + additive_components + trend.detach() * multiplicative_components
         return out
 
-    def compute_components(self, inputs):
+    def compute_components(self, inputs, meta):
         """This method returns the values of each model component.
 
         Note
@@ -594,7 +651,7 @@ class TimeNet(nn.Module):
                 Containing forecast coomponents with elements of dims (batch, n_forecasts)
         """
         components = {}
-        components["trend"] = self.trend(t=inputs["time"])
+        components["trend"] = self.trend(t=inputs["time"], meta=meta)
         if self.config_trend is not None and "seasonalities" in inputs:
             for name, features in inputs["seasonalities"].items():
                 components["season_{}".format(name)] = self.seasonality(features=features, name=name)
