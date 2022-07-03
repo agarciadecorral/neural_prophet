@@ -24,5 +24,6 @@
 
 
 TO DO:
+- Remove variables used to visualise (usually created through `locals()`)
 - Remove tensorboard 
 - Check if torchvision is a computer vision library - if so i installed it without meaninng it - Uninstall
