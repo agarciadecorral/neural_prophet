@@ -1,4 +1,5 @@
 from collections import OrderedDict
+from multiprocessing import dummy
 import numpy as np
 import torch
 import torch.nn as nn
@@ -341,7 +342,6 @@ class TimeNet(nn.Module):
             torch.Tensor
                 Trend component, same dimensions as input t
         """
-        self.variables_vis_0 = locals()
         past_next_changepoint = t.unsqueeze(2) >= torch.unsqueeze(self.trend_changepoints_t[1:], dim=0)
         segment_id = torch.sum(past_next_changepoint, dim=2)
         current_segment = nn.functional.one_hot(segment_id, num_classes=self.config_trend.n_changepoints + 1)
@@ -392,8 +392,6 @@ class TimeNet(nn.Module):
                 m_t = m_t.detach()
         else:
             m_t = torch.sum(current_segment * torch.unsqueeze(self.trend_m, dim=0), dim=2)
-
-        self.variables_vis = locals()
 
         if self.config_trend.trend_global_local == "local":
             c = [self.trend_k0[name] for name in meta["df_name"]]
@@ -546,7 +544,7 @@ class TimeNet(nn.Module):
                 x = x + self.covariate(lags=covariates[name], name=name)
         return x
 
-    def forward(self, inputs, **meta):
+    def forward(self, inputs, meta=None):
         """This method defines the model forward pass.
 
         Note
@@ -577,6 +575,14 @@ class TimeNet(nn.Module):
             torch.Tensor
                 Forecast of dims (batch, n_forecasts)
         """
+        # To use lr_finder, while passing the meta argument
+        # When using lr_finder we won't pass the meta argument so we will just pick on name ID
+        # When the trend mode is local we will find the lr as if it were global (we use the same name_id for all the individuals)
+        if meta is None and self.config_trend.trend_global_local == "local":
+            name_id_dummy = list(locals()["self"].trend_k0.items())[0][0]
+            meta = OrderedDict()
+            meta["df_name"] = [name_id_dummy for _ in range(inputs["time"].shape[0])]
+
         additive_components = torch.zeros_like(inputs["time"])
         multiplicative_components = torch.zeros_like(inputs["time"])
 

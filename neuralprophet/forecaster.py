@@ -1933,7 +1933,7 @@ class NeuralProphet:
         for i, (inputs, targets, meta) in enumerate(loader):
             # Run forward calculation
             self.meta_vis_0 = meta
-            predicted = self.model.forward(inputs, **meta)
+            predicted = self.model.forward(inputs, meta)
             self.train_epoch_prediction = predicted
             # Compute loss. no reduction.
             loss = self.config_train.loss_func(predicted, targets)
@@ -2028,7 +2028,7 @@ class NeuralProphet:
         with torch.no_grad():
             self.model.eval()
             for inputs, targets, meta in loader:
-                predicted = self.model.forward(inputs, **meta)
+                predicted = self.model.forward(inputs, meta)
                 val_metrics.update(predicted=predicted.detach(), target=targets.detach())
             val_metrics = val_metrics.compute(save=True)
         return val_metrics
@@ -2464,7 +2464,7 @@ class NeuralProphet:
             self.model.eval()
             ## I add meta here as it will be used. It was not used until the global local approach.
             for inputs, _, meta in loader:
-                predicted = self.model.forward(inputs, **meta)
+                predicted = self.model.forward(inputs, meta)
                 predicted_vectors.append(predicted.detach().numpy())
 
                 if include_components:

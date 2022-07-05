@@ -16,6 +16,7 @@
 3. Modifying the trend piecewise method, using meta and the corresponding "ID" 
 
 
+4. For the lr_finder we had to add code at the beginning of the forward method. This code assigns a dummy "ID" to all the individuals, and consequently, the lr_finder will be executed as if the trend mode were "global"
 
 
 # TO BE DONE: ALFONSO  (search for that)
@@ -24,6 +25,5 @@
 
 
 TO DO:
-- Remove variables used to visualise (usually created through `locals()`)
 - Remove tensorboard 
 - Check if torchvision is a computer vision library - if so i installed it without meaninng it - Uninstall
