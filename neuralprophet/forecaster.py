@@ -1221,7 +1221,12 @@ class NeuralProphet:
         df_trend = pd.DataFrame()
         for df_name, df_i in df.groupby("ID"):
             t = torch.from_numpy(np.expand_dims(df_i["t"].values, 1))
-            trend = self.model.trend(t).squeeze().detach().numpy()
+
+            # Creating and passing meta, in this case the meta['df_name'] is the ID of the dataframe
+            meta = OrderedDict()
+            meta["df_name"] = [df_name for _ in range(t.shape[0])]
+            trend = self.model.trend(t, meta).squeeze().detach().numpy()
+
             data_params = self.config_normalization.get_data_params(df_name)
             trend = trend * data_params["y"].scale + data_params["y"].shift
             df_aux = pd.DataFrame({"ds": df_i["ds"], "trend": trend, "ID": df_name})
