@@ -244,7 +244,7 @@ class Trend:
             if self.trend_reg_threshold is not None and self.trend_reg_threshold > 0:
                 log.info("Trend reg threshold ignored due to reg lambda <= 0.")
 
-        # If trend_global_local is not in the expected set, set to "local"
+        # If trend_global_local is not in the expected set, set to "global"
         if self.trend_global_local not in ["global", "local"]:
             log.error("Invalid global_local mode '{}'. Set to 'global'".format(self.trend_global_local))
             self.trend_global_local = "global"
