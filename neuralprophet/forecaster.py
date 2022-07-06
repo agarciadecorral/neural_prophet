@@ -83,6 +83,19 @@ class NeuralProphet:
                 * ``True``: Automatically set to a value that leads to a smooth trend.
                 * (default) ``False``: All changes in changepoints are regularized
 
+        trend_global_local : str, default 'global'
+            Modelling strategy of the trend when multiple time series are present.
+
+            Options:
+                * ``global``: All the elements are modelled with the same trend.
+                * ``local``: Each element is modelled with a different trend.
+
+            Note
+            ----
+            When only one time series is input, this parameter should not be provided.
+            Internally it will be set to ``global``, meaning that all the elements(only one in this case)
+            are modelled with the same trend.
+
         COMMENT
         Seasonality Config
         COMMENT
@@ -628,7 +641,8 @@ class NeuralProphet:
         """
         df, _, _, _ = df_utils.prep_or_copy_df(df)
 
-        # Creating list of IDs to be used in the local modelling
+        # List of different time series IDs, for global-local modelling (if enabled)
+        # When only one time series is input, self.id_list = ['__df__']
         self.id_list = list(df.ID.unique())
 
         if self.fitted is True:

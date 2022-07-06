@@ -58,7 +58,7 @@ class TimeNet(nn.Module):
         n_lags=0,
         num_hidden_layers=0,
         d_hidden=None,
-        id_list=["__df__"],  # list of identifiers to be used in the model
+        id_list=["__df__"],
     ):
         """
         Parameters
@@ -99,6 +99,13 @@ class TimeNet(nn.Module):
                 Note
                 ----
                 The default value is set to ``None``, which sets to ``n_lags + n_forecasts``.
+
+            id_list : list
+                List of different time series IDs, used for global-local modelling (if enabled)
+
+                Note
+                ----
+                This parameter is set to  ``['__df__']`` if only one time series is input.
         """
         super(TimeNet, self).__init__()
         # General
@@ -113,7 +120,8 @@ class TimeNet(nn.Module):
         if self.config_trend.growth in ["linear", "discontinuous"]:
             self.segmentwise_trend = self.config_trend.trend_reg == 0
 
-            # Trend_k0  parameter (for segmentwise trend) based on trend_global_local variable
+            # Trend_k0  parameter.
+            # A dictionary will be used when multiple time series are input AND want to use the different trend.
             if self.config_trend.trend_global_local == "global":
                 self.trend_k0 = new_param(dims=[1])
             elif self.config_trend.trend_global_local == "local":
@@ -131,7 +139,8 @@ class TimeNet(nn.Module):
                     self.config_trend.changepoints, requires_grad=False, dtype=torch.float
                 )
 
-                # Trend Deltas parameters (for segmentwise trend) based on trend_global_local variable
+                # Trend Deltas parameters
+                # A dictionary will be used when multiple time series are input AND want to use the different trend.
                 if self.config_trend.trend_global_local == "global":
                     self.trend_deltas = new_param(
                         dims=[self.config_trend.n_changepoints + 1]
@@ -139,7 +148,7 @@ class TimeNet(nn.Module):
                 elif self.config_trend.trend_global_local == "local":
                     self.trend_deltas = nn.ParameterDict(
                         {name: new_param(dims=[self.config_trend.n_changepoints + 1]) for name in id_list}
-                    )
+                    )  # including first segment
 
                 # TO BE DONE: ALFONSO
                 if self.config_trend.growth == "discontinuous":
@@ -336,53 +345,63 @@ class TimeNet(nn.Module):
         ----------
             t : torch.Tensor, float
                 normalized time of dimensions (batch, n_forecasts)
-
+            meta: dict
+                Metadata about the all the samples of the model input batch. Contains the following:
+                    * ``df_name`` (list, str), time series ID corresponding to each sample of the input batch.
         Returns
         -------
             torch.Tensor
                 Trend component, same dimensions as input t
         """
+        # Segment which each time(t) belongs to, for each sample of the batch.
         past_next_changepoint = t.unsqueeze(2) >= torch.unsqueeze(self.trend_changepoints_t[1:], dim=0)
         segment_id = torch.sum(past_next_changepoint, dim=2)
         current_segment = nn.functional.one_hot(segment_id, num_classes=self.config_trend.n_changepoints + 1)
 
-        # Compute k_t. If trend mode is local we need to use meta parameter.
-        # If trend mode is global use a common k_t
+        # Computing k_t. k_t is a list with the trend_deltas(parameters) of segments before or on time(t), for each batch sample.
         if self.config_trend.trend_global_local == "local":
-            # k_t for each batch element. k_t changes based on the df_name
+            # then k_t = k_t(current_segment, sample metadata)
             trend_deltas_batch_list = [torch.unsqueeze(self.trend_deltas[x], dim=0) for x in meta["df_name"]]
             trend_deltas_batch = torch.stack(trend_deltas_batch_list)
             k_t = torch.sum(current_segment * trend_deltas_batch, dim=2)
         elif self.config_trend.trend_global_local == "global":
+            # then k_t = k_t(current_segment).
             k_t = torch.sum(current_segment * torch.unsqueeze(self.trend_deltas, dim=0), dim=2)
 
         if not self.segmentwise_trend:
             previous_deltas_t = torch.sum(past_next_changepoint * torch.unsqueeze(self.trend_deltas[:-1], dim=0), dim=2)
             k_t = k_t + previous_deltas_t
 
+        # Computing deltas. `deltas`` is a tensor where the element i is defined as:
+        # deltas_i = trend_deltas(i) - trend_deltas(i-1)
         if self.config_trend.growth != "discontinuous":
             if self.segmentwise_trend:
                 ## Different coding if local or global. TO BE CHANGED
                 if self.config_trend.trend_global_local == "local":
-                    # We create a dict of deltas based on the df_name
+                    # We create a dict of deltas based on the time series ID.
                     dict_deltas = {
                         name: self.trend_deltas[name][:]
                         - torch.cat((self.trend_k0[name], self.trend_deltas[name][0:-1]))
                         for name in self.id_list
                     }
                 elif self.config_trend.trend_global_local == "global":
+                    # Unique deltas
                     deltas = self.trend_deltas[:] - torch.cat((self.trend_k0, self.trend_deltas[0:-1]))
 
             else:
                 deltas = self.trend_deltas
 
-            ## Different coding if local or global. TO BE CHANGED
+            # Computing m_t.
+            # m_t represents the value at the origin(t=0) that we would need to have so that
+            # if we use the trend_deltas(current_segment(t of batch sample))(+ k_0) as slope,
+            # we reach the same value at time = chagepoint_start_of_segment_i
+            # as if would have used the segmented slope (having in each segment the slope trend_deltas(i) + k_0)
             if self.config_trend.trend_global_local == "local":
                 # We create a dict of gammas based on the df_name
                 dict_gammas = {
                     name: -self.trend_changepoints_t[1:] * deltas[1:] for name, deltas in dict_deltas.items()
                 }
-                # m_t for each batch element. m_t varies depending on the df_name
+                # m_t for each batch sample. m_t varies depending on the df_name
                 gammas_batch_list = [torch.unsqueeze(dict_gammas[name], dim=0) for name in meta["df_name"]]
                 gammas_batch = torch.stack(gammas_batch_list)
                 m_t = torch.sum(past_next_changepoint * gammas_batch, dim=2)
@@ -395,8 +414,9 @@ class TimeNet(nn.Module):
         else:
             m_t = torch.sum(current_segment * torch.unsqueeze(self.trend_m, dim=0), dim=2)
 
+        # Computing trend value at time(t) for each batch sample.
         if self.config_trend.trend_global_local == "local":
-            # trend_k_0 for each batch element. trend_k_0 varies depending on the df_name
+            # trend_k_0 for each batch sample. trend_k_0 varies depending on the df_name
             trend_k_0_batch_list = [self.trend_k0[name] for name in meta["df_name"]]
             trend_k_0_batch = torch.stack(trend_k_0_batch_list)
             return (trend_k_0_batch + k_t) * t + m_t
@@ -410,7 +430,9 @@ class TimeNet(nn.Module):
         ----------
             t : torch.Tensor float
                 normalized time, dim: (batch, n_forecasts)
-
+            meta: dict
+                Metadata about the all the samples of the model input batch. Contains the following:
+                    * ``df_name`` (list, str), time series ID corresponding to each sample of the input batch.
         Returns
         -------
             torch.Tensor
@@ -573,14 +595,34 @@ class TimeNet(nn.Module):
                     * ``events`` (torch.Tensor, float), all event features, dims (batch, n_forecasts, n_features)
                     * ``regressors``(torch.Tensor, float), all regressor features, dims (batch, n_forecasts, n_features)
 
+            meta : dict, default=None
+                Metadata about the all the samples of the model input batch.
+
+                Contains the following:
+
+                Model Meta:
+                    * ``df_name`` (list, str), time series ID corresponding to each sample of the input batch.
+
+                Note
+                ----
+                The meta is sorted in the same way the inputs are sorted.
+
+                Note
+                ----
+                The default None value allows the forward method to be used without providing the meta argument.
+                This was designed to avoid issues with the library `lr_finder` https://github.com/davidtvs/pytorch-lr-finder
+                while having  ``config_trend.trend_global_local="local"``
+
+                The turnaround was passing the same meta (dummy ID) to all the samples of the batch.
+                Internally, this is equivalent to use ``config_trend.trend_global_local="global"`` to find the optimal learning rate.
+
         Returns
         -------
             torch.Tensor
                 Forecast of dims (batch, n_forecasts)
         """
-        # To use lr_finder, while passing the meta argument
-        # When using lr_finder we won't pass the meta argument so we will just pick on name ID
-        # When the trend mode is local we will find the lr as if it were global (we use the same name_id for all the individuals)
+
+        # Turnaround to avoid issues when the meta argument is None in trend_global_local = 'local' configuration
         if meta is None and self.config_trend.trend_global_local == "local":
             name_id_dummy = list(locals()["self"].trend_k0.items())[0][0]
             meta = OrderedDict()
