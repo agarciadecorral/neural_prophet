@@ -288,7 +288,11 @@ def plot_trend_change(m, ax=None, plot_name="Trend Change", figsize=(10, 6), df_
     cp_t = []
     for cp in m.model.config_trend.changepoints:
         cp_t.append(start + datetime.timedelta(seconds=cp * time_span_seconds))
-    weights = m.model.get_trend_deltas.detach().numpy()
+    # Global/Local Mode
+    if m.model.config_trend.trend_global_local == "local":
+        weights = m.model.get_trend_deltas[df_name].detach().numpy()
+    else:
+        weights = m.model.get_trend_deltas.detach().numpy()
     # add end-point to force scale to match trend plot
     cp_t.append(start + scale)
     weights = np.append(weights, [0.0])

@@ -1237,6 +1237,7 @@ class NeuralProphet:
             t = torch.from_numpy(np.expand_dims(df_i["t"].values, 1))
 
             # Creating and passing meta, in this case the meta['df_name'] is the ID of the dataframe
+            # Note: meta is only used on the trend method if trend_global_local is not "global"
             meta = OrderedDict()
             meta["df_name"] = [df_name for _ in range(t.shape[0])]
             trend = self.model.trend(t, meta).squeeze().detach().numpy()
@@ -1505,11 +1506,22 @@ class NeuralProphet:
                 ----
                 None (default):  automatic (10, 3 * npanel)
 
+                Note
+                ----
+                For multiple time series and local modeling of at least one component, the df_name parameter is required.
+
         Returns
         -------
             matplotlib.axes.Axes
                 plot of NeuralProphet forecasting
         """
+
+        if self.model.config_trend.trend_global_local == "local" and df_name is None:
+            raise Exception(
+                "df_name parameter is required for multiple time series and local modeling of at least one component."
+            )
+            # log.error("Importing matplotlib failed. Plotting will not work.")
+
         return plot_parameters(
             m=self,
             forecast_in_focus=self.highlight_forecast_step_n,

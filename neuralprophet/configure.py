@@ -248,6 +248,10 @@ class Trend:
         if self.trend_global_local not in ["global", "local"]:
             log.error("Invalid global_local mode '{}'. Set to 'global'".format(self.trend_global_local))
             self.trend_global_local = "global"
+        # If growth is off we want set to "global"
+        if (self.growth == "off") and (self.trend_global_local == "local"):
+            log.error("Invalid growth for global_local mode '{}'. Set to 'global'".format(self.trend_global_local))
+            self.trend_global_local = "global"
 
 
 @dataclass
