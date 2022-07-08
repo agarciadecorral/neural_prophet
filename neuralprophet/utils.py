@@ -44,10 +44,19 @@ def reg_func_trend(weights, threshold=None):
         torch.Tensor
             regularization loss
     """
-    abs_weights = torch.abs(weights)
-    if threshold is not None and not math.isclose(threshold, 0):
-        abs_weights = torch.clamp(abs_weights - threshold, min=0.0)
-    reg = torch.sum(abs_weights).squeeze()
+
+    if type(weights) == torch.nn.modules.container.ParameterDict:
+        # when different trend parameters per time series
+        abs_weights_list = [torch.abs(weights[x]) for x in list(weights.keys())]
+        if threshold is not None and not math.isclose(threshold, 0):
+            abs_weights_list = [torch.clamp(abs_weights - threshold, min=0.0) for abs_weights in abs_weights_list]
+        reg = torch.sum(torch.stack(abs_weights_list).mean(axis=0)).squeeze()
+    else:
+        abs_weights = torch.abs(weights)
+        if threshold is not None and not math.isclose(threshold, 0):
+            abs_weights = torch.clamp(abs_weights - threshold, min=0.0)
+        reg = torch.sum(abs_weights).squeeze()
+
     return reg
 
 

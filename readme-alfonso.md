@@ -14,7 +14,10 @@
     2.1 We create the `id_list` attribute in the `fit` method
 
 3. Modifying the trend piecewise method, using meta and the corresponding "ID" 
-
+    - Linear
+    - Off
+    - Discontinous
+    - trend_reg: Here more tricky as we had to modify the `_add_batch_regularizations` method
 
 4. For the lr_finder we had to add code at the beginning of the forward method. This code assigns a dummy "ID" to all the individuals, and consequently, the lr_finder will be executed as if the trend mode were "global"
 
