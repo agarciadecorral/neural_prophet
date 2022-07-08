@@ -444,7 +444,7 @@ class TimeNet(nn.Module):
             elif self.config_trend.trend_global_local == "global":
                 # then m_t = m_t(current_segment).
                 m_t = torch.sum(current_segment * torch.unsqueeze(self.trend_deltas, dim=0), dim=2)
-
+        self.vis_locals = locals()
         # Computing trend value at time(t) for each batch sample.
         if self.config_trend.trend_global_local == "local":
             # trend_k_0 for each batch sample. trend_k_0 varies depending on the df_name
