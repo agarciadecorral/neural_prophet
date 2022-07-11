@@ -140,7 +140,7 @@ class TimeNet(nn.Module):
                 )
 
                 # Trend Deltas parameters
-                # A dictionary will be used when multiple time series are input AND want to use the different trend.
+                # A dictionary will be used when multiple time series are modeled with different trend.
                 if self.config_trend.trend_global_local == "global":
                     self.trend_deltas = new_param(
                         dims=[self.config_trend.n_changepoints + 1]
@@ -361,47 +361,49 @@ class TimeNet(nn.Module):
         ----------
             t : torch.Tensor, float
                 normalized time of dimensions (batch, n_forecasts)
+
             meta: dict
-                Metadata about the all the samples of the model input batch. Contains the following:
-                    * ``df_name`` (list, str), time series ID corresponding to each sample of the input batch.
+                Metadata about the all the samples of the model input batch.
+
+                Contains the following:
+                    * ``df_name`` (list, str), time series name ID corresponding to each sample of the input batch.
         Returns
         -------
             torch.Tensor
                 Trend component, same dimensions as input t
         """
-        # Segment which each time(t) belongs to, for each sample of the batch.
+        # Varibles identifying, for t, the corresponding trend segment (for each sample of the batch).
         past_next_changepoint = t.unsqueeze(2) >= torch.unsqueeze(self.trend_changepoints_t[1:], dim=0)
         segment_id = torch.sum(past_next_changepoint, dim=2)
         current_segment = nn.functional.one_hot(segment_id, num_classes=self.config_trend.n_changepoints + 1)
 
-        ## Computing k_t.
-        # k_t is a list with the trend_deltas(parameters) of the segment at time(t), for each batch sample.
+        # Computing k_t.
+        # k_t is the model parameter representing the trend slope(trend slope-k_0) in the current_segment (for each sample of the batch).
         if self.config_trend.trend_global_local == "local":
-            # then k_t = k_t(current_segment, sample metadata)
+            # k_t = k_t(current_segment, sample metadata)
             trend_deltas_batch_list = [torch.unsqueeze(self.trend_deltas[x], dim=0) for x in meta["df_name"]]
             trend_deltas_batch = torch.stack(trend_deltas_batch_list)
             k_t = torch.sum(current_segment * trend_deltas_batch, dim=2)
         elif self.config_trend.trend_global_local == "global":
-            # then k_t = k_t(current_segment).
+            # k_t = k_t(current_segment).
             k_t = torch.sum(current_segment * torch.unsqueeze(self.trend_deltas, dim=0), dim=2)
 
         if not self.segmentwise_trend:
             if self.config_trend.trend_global_local == "local":
-                # then k_t = k_t(current_segment, previous_segment, sample metadata)
+                # k_t = k_t(current_segment, previous_segment, sample metadata)
                 previous_deltas_t = torch.sum(past_next_changepoint * trend_deltas_batch[:, :, :-1], dim=2)
                 k_t = k_t + previous_deltas_t
             elif self.config_trend.trend_global_local == "global":
-                # then k_t = k_t(current_segment, previous_segment)
+                # k_t = k_t(current_segment, previous_segment)
                 previous_deltas_t = torch.sum(
                     past_next_changepoint * torch.unsqueeze(self.trend_deltas[:-1], dim=0), dim=2
                 )
                 k_t = k_t + previous_deltas_t
 
-        ## Computing m_t.
-        # m_t represents the value at the origin(t=0) that we would need to have so that
-        # if we use the trend_deltas(current_segment(t of batch sample))(+ k_0) as slope,
+        # Computing m_t.
+        # m_t represents the value at the origin(t=0) that we would need to have so that if we use (k_t + k_0) as slope,
         # we reach the same value at time = chagepoint_start_of_segment_i
-        # as if would have used the segmented slope (having in each segment the slope trend_deltas(i) + k_0)
+        # that the segmented slope (having in each segment the slope trend_deltas(i) + k_0)
         if self.config_trend.growth != "discontinuous":
             # Intermediate computation: deltas.
             # `deltas`` is a tensor where the element i is defined as:
@@ -437,14 +439,14 @@ class TimeNet(nn.Module):
         else:
             # For this discontinuous, trend_m is a parameter to optimize, as it is not defined just by trend_deltas + trend_k0
             if self.config_trend.trend_global_local == "local":
-                # then m_t = k_t(current_segment, sample metadata)
+                # m_t = k_t(current_segment, sample metadata)
                 m_t_batch_list = [torch.unsqueeze(self.trend_m[x], dim=0) for x in meta["df_name"]]
                 m_t_batch = torch.stack(m_t_batch_list)
                 m_t = torch.sum(current_segment * m_t_batch, dim=2)
             elif self.config_trend.trend_global_local == "global":
-                # then m_t = m_t(current_segment).
+                # m_t = m_t(current_segment).
                 m_t = torch.sum(current_segment * torch.unsqueeze(self.trend_deltas, dim=0), dim=2)
-        self.vis_locals = locals()
+
         # Computing trend value at time(t) for each batch sample.
         if self.config_trend.trend_global_local == "local":
             # trend_k_0 for each batch sample. trend_k_0 varies depending on the df_name
@@ -648,9 +650,8 @@ class TimeNet(nn.Module):
                 ----
                 The default None value allows the forward method to be used without providing the meta argument.
                 This was designed to avoid issues with the library `lr_finder` https://github.com/davidtvs/pytorch-lr-finder
-                while having  ``config_trend.trend_global_local="local"``
-
-                The turnaround was passing the same meta (dummy ID) to all the samples of the batch.
+                while having  ``config_trend.trend_global_local="local"``.
+                The turnaround consists on passing the same meta (dummy ID) to all the samples of the batch.
                 Internally, this is equivalent to use ``config_trend.trend_global_local="global"`` to find the optimal learning rate.
 
         Returns
