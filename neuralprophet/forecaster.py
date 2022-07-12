@@ -1240,7 +1240,8 @@ class NeuralProphet:
             # Note: meta is only used on the trend method if trend_global_local is not "global"
             meta = OrderedDict()
             meta["df_name"] = [df_name for _ in range(t.shape[0])]
-            meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
+            if self.model.config_trend.trend_global_local == "local":
+                meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
             trend = self.model.trend(t, meta_name_tensor).squeeze().detach().numpy()
 
             data_params = self.config_normalization.get_data_params(df_name)
@@ -1964,7 +1965,8 @@ class NeuralProphet:
         self.model.train()
         for i, (inputs, targets, meta) in enumerate(loader):
             # Run forward calculation
-            meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
+            if self.model.config_trend.trend_global_local == "local":
+                meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
             predicted = self.model.forward(inputs, meta_name_tensor)
             self.train_epoch_prediction = predicted
             # Compute loss. no reduction.
@@ -2061,7 +2063,8 @@ class NeuralProphet:
         with torch.no_grad():
             self.model.eval()
             for inputs, targets, meta in loader:
-                meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
+                if self.model.config_trend.trend_global_local == "local":
+                    meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
                 predicted = self.model.forward(inputs, meta_name_tensor)
                 val_metrics.update(predicted=predicted.detach(), target=targets.detach())
             val_metrics = val_metrics.compute(save=True)
@@ -2498,7 +2501,8 @@ class NeuralProphet:
             self.model.eval()
             ## I add meta here as it will be used. It was not used until the global local approach.
             for inputs, _, meta in loader:
-                meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
+                if self.model.config_trend.trend_global_local == "local":
+                    meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
                 predicted = self.model.forward(inputs, meta_name_tensor)
                 predicted_vectors.append(predicted.detach().numpy())
 
