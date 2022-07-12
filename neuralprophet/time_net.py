@@ -703,7 +703,6 @@ class TimeNet(nn.Module):
                     inputs["regressors"]["multiplicative"], self.regressor_params["multiplicative"]
                 )
 
-        self.meta_vis = meta
         trend = self.trend(t=inputs["time"], meta=meta)
         out = trend + additive_components + trend.detach() * multiplicative_components
         return out

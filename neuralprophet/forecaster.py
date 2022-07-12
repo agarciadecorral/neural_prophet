@@ -1963,7 +1963,6 @@ class NeuralProphet:
         self.model.train()
         for i, (inputs, targets, meta) in enumerate(loader):
             # Run forward calculation
-            self.meta_vis_0 = meta
             predicted = self.model.forward(inputs, meta)
             self.train_epoch_prediction = predicted
             # Compute loss. no reduction.
