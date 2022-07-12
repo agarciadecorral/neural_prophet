@@ -1242,6 +1242,8 @@ class NeuralProphet:
             meta["df_name"] = [df_name for _ in range(t.shape[0])]
             if self.model.config_trend.trend_global_local == "local":
                 meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
+            else:
+                meta_name_tensor = None
             trend = self.model.trend(t, meta_name_tensor).squeeze().detach().numpy()
 
             data_params = self.config_normalization.get_data_params(df_name)
@@ -1967,6 +1969,8 @@ class NeuralProphet:
             # Run forward calculation
             if self.model.config_trend.trend_global_local == "local":
                 meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
+            else:
+                meta_name_tensor = None
             predicted = self.model.forward(inputs, meta_name_tensor)
             self.train_epoch_prediction = predicted
             # Compute loss. no reduction.
@@ -2065,6 +2069,8 @@ class NeuralProphet:
             for inputs, targets, meta in loader:
                 if self.model.config_trend.trend_global_local == "local":
                     meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
+                else:
+                    meta_name_tensor = None
                 predicted = self.model.forward(inputs, meta_name_tensor)
                 val_metrics.update(predicted=predicted.detach(), target=targets.detach())
             val_metrics = val_metrics.compute(save=True)
@@ -2503,6 +2509,8 @@ class NeuralProphet:
             for inputs, _, meta in loader:
                 if self.model.config_trend.trend_global_local == "local":
                     meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
+                else:
+                    meta_name_tensor = None
                 predicted = self.model.forward(inputs, meta_name_tensor)
                 predicted_vectors.append(predicted.detach().numpy())
 
