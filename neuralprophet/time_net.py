@@ -379,7 +379,8 @@ class TimeNet(nn.Module):
         """
 
         # Individual meta
-        meta_name_tensor_one_hot = nn.functional.one_hot(meta, num_classes=len(self.id_list))
+        if self.config_trend.trend_global_local == "local":
+            meta_name_tensor_one_hot = nn.functional.one_hot(meta, num_classes=len(self.id_list))
 
         # Varibles identifying, for t, the corresponding trend segment (for each sample of the batch).
         past_next_changepoint = t.unsqueeze(2) >= torch.unsqueeze(self.trend_changepoints_t[1:], dim=0)
@@ -486,7 +487,8 @@ class TimeNet(nn.Module):
 
         """
         # Individual meta
-        meta_name_tensor_one_hot = nn.functional.one_hot(meta, num_classes=len(self.id_list))
+        if self.config_trend.trend_global_local == "local":
+            meta_name_tensor_one_hot = nn.functional.one_hot(meta, num_classes=len(self.id_list))
 
         if self.config_trend.growth == "off":
             trend = torch.zeros_like(t)
