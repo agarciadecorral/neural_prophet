@@ -1240,7 +1240,8 @@ class NeuralProphet:
             # Note: meta is only used on the trend method if trend_global_local is not "global"
             meta = OrderedDict()
             meta["df_name"] = [df_name for _ in range(t.shape[0])]
-            trend = self.model.trend(t, meta).squeeze().detach().numpy()
+            meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
+            trend = self.model.trend(t, meta_name_tensor).squeeze().detach().numpy()
 
             data_params = self.config_normalization.get_data_params(df_name)
             trend = trend * data_params["y"].scale + data_params["y"].shift
@@ -1963,7 +1964,8 @@ class NeuralProphet:
         self.model.train()
         for i, (inputs, targets, meta) in enumerate(loader):
             # Run forward calculation
-            predicted = self.model.forward(inputs, meta)
+            meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
+            predicted = self.model.forward(inputs, meta_name_tensor)
             self.train_epoch_prediction = predicted
             # Compute loss. no reduction.
             loss = self.config_train.loss_func(predicted, targets)
@@ -2014,6 +2016,7 @@ class NeuralProphet:
             # Regularize trend to be smoother/sparse
             l_trend = self.config_trend.trend_reg
             if self.config_trend.n_changepoints > 0 and l_trend is not None and l_trend > 0:
+                self.hello_vis = locals()
                 reg_trend = utils.reg_func_trend(
                     weights=self.model.get_trend_deltas,
                     threshold=self.config_train.trend_reg_threshold,
@@ -2058,7 +2061,8 @@ class NeuralProphet:
         with torch.no_grad():
             self.model.eval()
             for inputs, targets, meta in loader:
-                predicted = self.model.forward(inputs, meta)
+                meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
+                predicted = self.model.forward(inputs, meta_name_tensor)
                 val_metrics.update(predicted=predicted.detach(), target=targets.detach())
             val_metrics = val_metrics.compute(save=True)
         return val_metrics
@@ -2494,12 +2498,13 @@ class NeuralProphet:
             self.model.eval()
             ## I add meta here as it will be used. It was not used until the global local approach.
             for inputs, _, meta in loader:
-                predicted = self.model.forward(inputs, meta)
+                meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
+                predicted = self.model.forward(inputs, meta_name_tensor)
                 predicted_vectors.append(predicted.detach().numpy())
 
                 if include_components:
                     ## passing meta
-                    components = self.model.compute_components(inputs, meta)
+                    components = self.model.compute_components(inputs, meta_name_tensor)
                     if component_vectors is None:
                         component_vectors = {name: [value.detach().numpy()] for name, value in components.items()}
                     else:
