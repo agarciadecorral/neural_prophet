@@ -351,7 +351,10 @@ def plot_trend(m, ax=None, plot_name="Trend", figsize=(10, 6), df_name="__df__")
         if m.config_trend.growth == "off":
             trend_1 = trend_0
         else:
-            trend_1 = trend_0 + m.model.trend_k0.detach().numpy()
+            if m.config_trend.trend_global_local == "local":
+                trend_1 = trend_0 + m.model.trend_k0[df_name].detach().numpy()
+            else:
+                trend_1 = trend_0 + m.model.trend_k0.detach().numpy()
 
         data_params = m.config_normalization.get_data_params(df_name)
         shift = data_params["y"].shift
