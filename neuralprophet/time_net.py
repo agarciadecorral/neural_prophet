@@ -123,7 +123,7 @@ class TimeNet(nn.Module):
             self.segmentwise_trend = self.config_trend.trend_reg == 0
 
             # Trend_k0  parameter.
-            # A dictionary will be used when multiple time series are input AND want to use the different trend.
+            # An extra dimension will be used when multiple time series are input AND want to use the different trend.
             if self.config_trend.trend_global_local == "global":
                 self.trend_k0 = new_param(dims=[1])
             elif self.config_trend.trend_global_local == "local":
