@@ -1907,7 +1907,6 @@ class NeuralProphet:
 
         dataset = self._create_dataset(df, predict_mode=False)  # needs to be called after set_auto_seasonalities
         self.config_train.set_auto_batch_epoch(n_data=len(dataset))
-        self.dataset_visualization = dataset
 
         loader = DataLoader(dataset, batch_size=self.config_train.batch_size, shuffle=True)
 
@@ -2022,7 +2021,6 @@ class NeuralProphet:
             # Regularize trend to be smoother/sparse
             l_trend = self.config_trend.trend_reg
             if self.config_trend.n_changepoints > 0 and l_trend is not None and l_trend > 0:
-                self.hello_vis = locals()
                 reg_trend = utils.reg_func_trend(
                     weights=self.model.get_trend_deltas,
                     threshold=self.config_train.trend_reg_threshold,
@@ -2132,7 +2130,6 @@ class NeuralProphet:
 
         # set up data loader
         loader = self._init_train_loader(df)
-        self.dataloader_vis = loader
         # set up Metrics
         if self.highlight_forecast_step_n is not None:
             self.metrics.add_specific_target(target_pos=self.highlight_forecast_step_n - 1)
