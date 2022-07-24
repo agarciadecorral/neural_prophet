@@ -701,18 +701,13 @@ class NeuralProphet:
         for df_name, df_i in df.groupby("ID"):
             dates, predicted, components = self._predict_raw(df_i, df_name, include_components=decompose)
             if raw:
-                print(1)
                 fcst = self._convert_raw_predictions_to_raw_df(dates, predicted, components)
                 if periods_added[df_name] > 0:
                     fcst = fcst[:-1]
             else:
-                print(2)
-                display(df_i)
                 fcst = self._reshape_raw_predictions_to_forecst_df(df_i, predicted, components)
-                display(fcst)
                 if periods_added[df_name] > 0:
                     fcst = fcst[: -periods_added[df_name]]
-            display(fcst)
             forecast = pd.concat((forecast, fcst), ignore_index=True)
         df = df_utils.return_df_in_original_format(
             forecast, received_ID_col, received_single_time_series, received_dict
@@ -2288,7 +2283,6 @@ class NeuralProphet:
 
     def _make_future_dataframe(self, df, events_df, regressors_df, periods, n_historic_predictions):
         # Receives df with single ID column
-        print("HERE")
         assert len(df["ID"].unique()) == 1
         if periods == 0 and n_historic_predictions is True:
             log.warning(
@@ -2605,10 +2599,8 @@ class NeuralProphet:
         # Receives df with single ID column
         assert len(df["ID"].unique()) == 1
         cols = ["ds", "y", "ID"]  # cols to keep from df
-        # df = df.reset_index(drop=True)
+        df = df.reset_index(drop=True)
         df_forecast = pd.concat((df[cols],), axis=1)
-        print(len(df))
-        print(len(df_forecast))
         # create a line for each forecast_lag
         # 'yhat<i>' is the forecast for 'y' at 'ds' from i steps ago.
         for forecast_lag in range(1, self.n_forecasts + 1):
@@ -2618,7 +2610,6 @@ class NeuralProphet:
             yhat = np.concatenate(([None] * pad_before, forecast, [None] * pad_after))
             df_forecast["yhat{}".format(forecast_lag)] = yhat
             df_forecast["residual{}".format(forecast_lag)] = yhat - df_forecast["y"]
-        print(len(df_forecast))
         if components is None:
             return df_forecast
 
@@ -2637,16 +2628,12 @@ class NeuralProphet:
                     pad_after = self.n_forecasts - forecast_lag
                     yhat = np.concatenate(([None] * pad_before, forecast, [None] * pad_after))
                     df_forecast["{}{}".format(comp, forecast_lag)] = yhat
-        print(len(df_forecast))
+
         # only for non-lagged components
         for comp in components:
             if comp not in lagged_components:
                 forecast_0 = components[comp][0, :]
-                print(forecast_0)
                 forecast_rest = components[comp][1:, self.n_forecasts - 1]
-                print(forecast_rest)
                 yhat = np.concatenate(([None] * self.max_lags, forecast_0, forecast_rest))
-                print(len(yhat))
                 df_forecast = pd.concat([df_forecast, pd.Series(yhat, name=comp)], axis=1, ignore_index=False)
-        print(len(df_forecast))
         return df_forecast
