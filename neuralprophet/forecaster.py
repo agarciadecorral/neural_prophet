@@ -2283,6 +2283,7 @@ class NeuralProphet:
 
     def _make_future_dataframe(self, df, events_df, regressors_df, periods, n_historic_predictions):
         # Receives df with single ID column
+        print("HERE")
         assert len(df["ID"].unique()) == 1
         if periods == 0 and n_historic_predictions is True:
             log.warning(
