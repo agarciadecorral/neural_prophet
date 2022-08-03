@@ -116,6 +116,7 @@ class TimeNet(nn.Module):
         self.bias = new_param(dims=[1])
 
         # Trend
+        self.config_season = config_season
         self.config_trend = config_trend
         if self.config_trend.growth in ["linear", "discontinuous"]:
             self.segmentwise_trend = self.config_trend.trend_reg == 0
