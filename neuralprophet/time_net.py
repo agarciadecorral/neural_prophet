@@ -384,7 +384,7 @@ class TimeNet(nn.Module):
             trend = self._piecewise_linear_trend(t)
         return self.bias + trend
 
-    def seasonality(self, features, name, meta):
+    def seasonality(self, features, name, meta=None):
         """Compute single seasonality component.
 
         Parameters
