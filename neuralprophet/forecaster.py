@@ -124,6 +124,17 @@ class NeuralProphet:
             larger values (~1-100) dampen the seasonality.
             default: None, no regularization
 
+        season_global_local : str, default 'global'
+            Modelling strategy of the seasonality when multiple time series are present.
+            Options:
+                * ``global``: All the elements are modelled with the same seasonality.
+                * ``local``: Each element is modelled with a different seasonality.
+            Note
+            ----
+            When only one time series is input, this parameter should not be provided.
+            Internally it will be set to ``global``, meaning that all the elements(only one in this case)
+            are modelled with the same seasonality.
+
         COMMENT
         AR Config
         COMMENT
@@ -275,6 +286,7 @@ class NeuralProphet:
         daily_seasonality="auto",
         seasonality_mode="additive",
         seasonality_reg=0,
+        season_global_local="global",
         n_forecasts=1,
         n_lags=0,
         num_hidden_layers=0,
@@ -357,6 +369,7 @@ class NeuralProphet:
             yearly_arg=yearly_seasonality,
             weekly_arg=weekly_seasonality,
             daily_arg=daily_seasonality,
+            season_global_local=season_global_local,
         )
         self.config_train.reg_lambda_season = self.season_config.reg_lambda
 
@@ -623,6 +636,11 @@ class NeuralProphet:
                 metrics with training and potentially evaluation metrics
         """
         df, _, _, _ = df_utils.prep_or_copy_df(df)
+
+        # List of different time series IDs, for global-local modelling (if enabled)
+        # When only one time series is input, self.id_list = ['__df__']
+        self.id_list = list(df.ID.unique())
+
         if self.fitted is True:
             log.error("Model has already been fitted. Re-fitting may break or produce different results.")
         self.max_lags = df_utils.get_max_num_lags(self.config_covar, self.n_lags)
@@ -1428,65 +1446,65 @@ class NeuralProphet:
             )
 
     def get_latest_forecast(
-             self,
-             fcst,
-             df_name=None,
-             include_history_data=False,
-             include_previous_forecasts=0,
-     ):
-         """Get the latest NeuralProphet forecast, optional including historical data.
+        self,
+        fcst,
+        df_name=None,
+        include_history_data=False,
+        include_previous_forecasts=0,
+    ):
+        """Get the latest NeuralProphet forecast, optional including historical data.
 
-         Parameters
-         ----------
-             fcst : pd.DataFrame, dict
-                 output of self.predict.
-             df_name : str
-                 ID from time series that should forecast
-             include_history_data : bool
-                 specifies whether to include historical data
-             include_previous_forecasts : int
-                 specifies how many forecasts before latest forecast to include
-         Returns
-         -------
-             pd.DataFrame
-                 columns ``ds``, ``y``, and [``yhat<i>``]
+        Parameters
+        ----------
+            fcst : pd.DataFrame, dict
+                output of self.predict.
+            df_name : str
+                ID from time series that should forecast
+            include_history_data : bool
+                specifies whether to include historical data
+            include_previous_forecasts : int
+                specifies how many forecasts before latest forecast to include
+        Returns
+        -------
+            pd.DataFrame
+                columns ``ds``, ``y``, and [``yhat<i>``]
 
-                 Note
-                 ----
-                 where yhat<i> refers to the i-step-ahead prediction for this row's datetime.
-                 e.g. yhat3 is the prediction for this datetime, predicted 3 steps ago, "3 steps old".
-         Examples
-         --------
-         We may get the df of the latest forecast:
-             >>> forecast = m.predict(df)
-             >>> df_forecast = m.get_latest_forecast(forecast)
-         Number of steps before latest forecast could be included:
-             >>> df_forecast = m.get_latest_forecast(forecast, include_previous_forecast=3)
-         Historical data could be included, however be aware that the df could be large:
-             >>> df_forecast = m.get_latest_forecast(forecast, include_history_data=True)
-         """
+                Note
+                ----
+                where yhat<i> refers to the i-step-ahead prediction for this row's datetime.
+                e.g. yhat3 is the prediction for this datetime, predicted 3 steps ago, "3 steps old".
+        Examples
+        --------
+        We may get the df of the latest forecast:
+            >>> forecast = m.predict(df)
+            >>> df_forecast = m.get_latest_forecast(forecast)
+        Number of steps before latest forecast could be included:
+            >>> df_forecast = m.get_latest_forecast(forecast, include_previous_forecast=3)
+        Historical data could be included, however be aware that the df could be large:
+            >>> df_forecast = m.get_latest_forecast(forecast, include_history_data=True)
+        """
 
-         if self.max_lags == 0:
-             raise ValueError("Use the standard plot function for models without lags.")
-         fcst, received_ID_col, received_single_time_series, received_dict = df_utils.prep_or_copy_df(fcst)
-         if not received_single_time_series:
-             if df_name not in fcst["ID"].unique():
-                 assert len(fcst["ID"].unique()) > 1
-                 raise Exception(
-                     "Many time series are present in the pd.DataFrame (more than one ID). Please specify ID to be "
-                     "forecasted. "
-                 )
-             else:
-                 fcst = fcst[fcst["ID"] == df_name].copy(deep=True)
-                 log.info("Getting data from ID {}".format(df_name))
-         if include_history_data is None:
-             fcst = fcst[-(include_previous_forecasts + self.n_forecasts + self.max_lags):]
-         elif include_history_data is False:
-             fcst = fcst[-(include_previous_forecasts + self.n_forecasts):]
-         elif include_history_data is True:
-             fcst = fcst
-         fcst = utils.fcst_df_to_last_forecast(fcst, n_last=1 + include_previous_forecasts)
-         return fcst
+        if self.max_lags == 0:
+            raise ValueError("Use the standard plot function for models without lags.")
+        fcst, received_ID_col, received_single_time_series, received_dict = df_utils.prep_or_copy_df(fcst)
+        if not received_single_time_series:
+            if df_name not in fcst["ID"].unique():
+                assert len(fcst["ID"].unique()) > 1
+                raise Exception(
+                    "Many time series are present in the pd.DataFrame (more than one ID). Please specify ID to be "
+                    "forecasted. "
+                )
+            else:
+                fcst = fcst[fcst["ID"] == df_name].copy(deep=True)
+                log.info("Getting data from ID {}".format(df_name))
+        if include_history_data is None:
+            fcst = fcst[-(include_previous_forecasts + self.n_forecasts + self.max_lags) :]
+        elif include_history_data is False:
+            fcst = fcst[-(include_previous_forecasts + self.n_forecasts) :]
+        elif include_history_data is True:
+            fcst = fcst
+        fcst = utils.fcst_df_to_last_forecast(fcst, n_last=1 + include_previous_forecasts)
+        return fcst
 
     def plot_last_forecast(
         self,
@@ -1731,6 +1749,7 @@ class NeuralProphet:
             n_lags=self.n_lags,
             num_hidden_layers=self.config_model.num_hidden_layers,
             d_hidden=self.config_model.d_hidden,
+            id_list=self.id_list,
         )
         log.debug(self.model)
         return self.model
@@ -2144,7 +2163,11 @@ class NeuralProphet:
         self.model.train()
         for i, (inputs, targets, meta) in enumerate(loader):
             # Run forward calculation
-            predicted = self.model.forward(inputs)
+            if self.model.config_season.season_global_local == "local":
+                meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
+            else:
+                meta_name_tensor = None
+            predicted = self.model.forward(inputs, meta_name_tensor)
             # store predictions in self for later network visualization
             self.train_epoch_prediction = predicted
             # Compute loss. no reduction.
@@ -2240,7 +2263,11 @@ class NeuralProphet:
         with torch.no_grad():
             self.model.eval()
             for inputs, targets, meta in loader:
-                predicted = self.model.forward(inputs)
+                if self.model.config_season.season_global_local == "local":
+                    meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
+                else:
+                    meta_name_tensor = None
+                predicted = self.model.forward(inputs, meta_name_tensor)
                 val_metrics.update(predicted=predicted.detach(), target=targets.detach())
             val_metrics = val_metrics.compute(save=True)
         return val_metrics
@@ -2680,12 +2707,16 @@ class NeuralProphet:
 
         with torch.no_grad():
             self.model.eval()
-            for inputs, _, _ in loader:
-                predicted = self.model.forward(inputs)
+            for inputs, _, meta in loader:
+                if self.model.config_season.season_global_local == "local":
+                    meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
+                else:
+                    meta_name_tensor = None
+                predicted = self.model.forward(inputs, meta_name_tensor)
                 predicted_vectors.append(predicted.detach().numpy())
 
                 if include_components:
-                    components = self.model.compute_components(inputs)
+                    components = self.model.compute_components(inputs, meta_name_tensor)
                     if component_vectors is None:
                         component_vectors = {name: [value.detach().numpy()] for name, value in components.items()}
                     else:

@@ -260,6 +260,7 @@ class AllSeason:
     weekly_arg: (str, bool, int) = "auto"
     daily_arg: (str, bool, int) = "auto"
     periods: OrderedDict = field(init=False)  # contains SeasonConfig objects
+    season_global_local: str = "global"
 
     def __post_init__(self):
         if self.reg_lambda > 0 and self.computation == "fourier":
@@ -272,6 +273,11 @@ class AllSeason:
                 "daily": Season(resolution=6, period=1, arg=self.daily_arg),
             }
         )
+
+        # If season_global_local is not in the expected set, set to "global"
+        if self.season_global_local not in ["global", "local"]:
+            log.error("Invalid season_global_local mode '{}'. Set to 'global'".format(self.season_global_local))
+            self.season_global_local = "global"
 
     def append(self, name, period, resolution, arg):
         self.periods[name] = Season(resolution=resolution, period=period, arg=arg)
