@@ -1308,10 +1308,22 @@ class NeuralProphet:
             predicted = {}
             for name in self.season_config.periods:
                 predicted[name] = list()
-            for inputs, _, _ in loader:
+            for inputs, _, meta in loader:
+                # Meta as a tensor for prediction
+                if self.model.config_season is None:
+                    meta_name_tensor = None
+                elif self.model.config_season.season_global_local == "local":
+                    meta = OrderedDict()
+                    meta["df_name"] = [df_name for _ in range(inputs["time"].shape[0])]
+                    meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
+                else:
+                    meta_name_tensor = None
+
                 for name in self.season_config.periods:
                     features = inputs["seasonalities"][name]
-                    y_season = torch.squeeze(self.model.seasonality(features=features, name=name))
+                    y_season = torch.squeeze(
+                        self.model.seasonality(features=features, name=name, meta=meta_name_tensor)
+                    )
                     predicted[name].append(y_season.data.numpy())
 
             for name in self.season_config.periods:
@@ -2163,7 +2175,9 @@ class NeuralProphet:
         self.model.train()
         for i, (inputs, targets, meta) in enumerate(loader):
             # Run forward calculation
-            if self.model.config_season.season_global_local == "local":
+            if self.model.config_season is None:
+                meta_name_tensor = None
+            elif self.model.config_season.season_global_local == "local":
                 meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
             else:
                 meta_name_tensor = None
@@ -2263,7 +2277,9 @@ class NeuralProphet:
         with torch.no_grad():
             self.model.eval()
             for inputs, targets, meta in loader:
-                if self.model.config_season.season_global_local == "local":
+                if self.model.config_season is None:
+                    meta_name_tensor = None
+                elif self.model.config_season.season_global_local == "local":
                     meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
                 else:
                     meta_name_tensor = None
@@ -2708,7 +2724,9 @@ class NeuralProphet:
         with torch.no_grad():
             self.model.eval()
             for inputs, _, meta in loader:
-                if self.model.config_season.season_global_local == "local":
+                if self.model.config_season is None:
+                    meta_name_tensor = None
+                elif self.model.config_season.season_global_local == "local":
                     meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
                 else:
                     meta_name_tensor = None

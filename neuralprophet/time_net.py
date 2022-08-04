@@ -403,7 +403,6 @@ class TimeNet(nn.Module):
         if self.config_season.season_global_local == "local":
             meta_name_tensor_one_hot = nn.functional.one_hot(meta, num_classes=len(self.id_list))
 
-        self.local_seasonality_vis = locals()
         if self.config_season.season_global_local == "local":
             season_params_sample = torch.sum(
                 torch.unsqueeze(meta_name_tensor_one_hot, dim=2) * torch.unsqueeze(self.season_params[name], dim=0),
@@ -570,7 +569,9 @@ class TimeNet(nn.Module):
         """
 
         # Turnaround to avoid issues when the meta argument is None in season_global_local = 'local' configuration
-        if meta is None and self.config_season.season_global_local == "local":
+        if self.config_season is None:
+            pass
+        elif meta is None and self.config_season.season_global_local == "local":
             name_id_dummy = locals()["self"].id_list[0]
             meta = OrderedDict()
             meta["df_name"] = [name_id_dummy for _ in range(inputs["time"].shape[0])]
@@ -615,7 +616,6 @@ class TimeNet(nn.Module):
 
         trend = self.trend(t=inputs["time"])
         out = trend + additive_components + trend.detach() * multiplicative_components
-        self.locals_vis = locals()
         return out
 
     def compute_components(self, inputs, meta):
