@@ -1649,6 +1649,11 @@ class NeuralProphet:
                 fcst = fcst[fcst["ID"] == df_name].copy(deep=True)
                 log.info("Plotting data from ID {}".format(df_name))
 
+        if self.model.config_season.season_global_local == "local" and df_name is None:
+            raise Exception(
+                "df_name parameter is required for multiple time series and local modeling of at least one component."
+            )
+
         # Check whether the default plotting backend is overwritten
         plotting_backend = (
             plotting_backend
@@ -1718,6 +1723,12 @@ class NeuralProphet:
             matplotlib.axes.Axes
                 plot of NeuralProphet forecasting
         """
+
+        if self.model.config_season.season_global_local == "local" and df_name is None:
+            raise Exception(
+                "df_name parameter is required for multiple time series and local modeling of at least one component."
+            )
+
         # Check whether the default plotting backend is overwritten
         plotting_backend = (
             plotting_backend
