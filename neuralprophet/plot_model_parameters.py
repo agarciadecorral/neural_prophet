@@ -28,7 +28,7 @@ except ImportError:
     log.error("Importing matplotlib failed. Plotting will not work.")
 
 
-def plot_parameters(m, forecast_in_focus=None, weekly_start=0, yearly_start=0, figsize=None, df_name=None):
+def plot_parameters(m, forecast_in_focus=None, weekly_start=0, yearly_start=0, figsize=None, df_name=None, meta=None):
     """Plot the parameters that the model is composed of, visually.
 
     Parameters
@@ -213,11 +213,11 @@ def plot_parameters(m, forecast_in_focus=None, weekly_start=0, yearly_start=0, f
             if m.season_config.mode == "multiplicative":
                 multiplicative_axes.append(ax)
             if name.lower() == "weekly" or m.season_config.periods[name].period == 7:
-                plot_weekly(m=m, ax=ax, weekly_start=weekly_start, comp_name=name, df_name=df_name)
+                plot_weekly(m=m, ax=ax, weekly_start=weekly_start, comp_name=name, df_name=df_name, meta=meta)
             elif name.lower() == "yearly" or m.season_config.periods[name].period == 365.25:
-                plot_yearly(m=m, ax=ax, yearly_start=yearly_start, comp_name=name, df_name=df_name)
+                plot_yearly(m=m, ax=ax, yearly_start=yearly_start, comp_name=name, df_name=df_name, meta=meta)
             elif name.lower() == "daily" or m.season_config.periods[name].period == 1:
-                plot_daily(m=m, ax=ax, comp_name=name, df_name=df_name)
+                plot_daily(m=m, ax=ax, comp_name=name, df_name=df_name, meta=meta)
             else:
                 plot_custom_season(m=m, ax=ax, comp_name=name, df_name=df_name)
         elif plot_name == "lagged weights":
@@ -499,11 +499,11 @@ def predict_one_season(m, name, n_steps=100, df_name="__df__"):
     return t_i, predicted
 
 
-def predict_season_from_dates(m, dates, name, df_name="__df__"):
+def predict_season_from_dates(m, dates, name, df_name="__df__", meta=None):
     config = m.season_config.periods[name]
     features = time_dataset.fourier_series(dates=dates, period=config.period, series_order=config.resolution)
     features = torch.from_numpy(np.expand_dims(features, 1))
-    predicted = m.model.seasonality(features=features, name=name)
+    predicted = m.model.seasonality(features=features, name=name, meta=meta)
     predicted = predicted.squeeze().detach().numpy()
     if m.season_config.mode == "additive":
         data_params = m.config_normalization.get_data_params(df_name)
@@ -602,7 +602,7 @@ def plot_yearly(m, comp_name="yearly", yearly_start=0, quick=True, ax=None, figs
     days = pd.date_range(start="2017-01-01", periods=365) + pd.Timedelta(days=yearly_start)
     df_y = pd.DataFrame({"ds": days})
     if quick:
-        predicted = predict_season_from_dates(m, dates=df_y["ds"], name=comp_name, df_name=df_name)
+        predicted = predict_season_from_dates(m, dates=df_y["ds"], name=comp_name, df_name=df_name, meta=meta)
     else:
         predicted = m.predict_seasonal_components({df_name: df_y})[comp_name]
     artists += ax.plot(df_y["ds"].dt.to_pydatetime(), predicted, ls="-", c="#0072B2")
@@ -661,7 +661,7 @@ def plot_weekly(m, comp_name="weekly", weekly_start=0, quick=True, ax=None, figs
     days_i = pd.date_range(start="2017-01-01", periods=7 * 24, freq="H") + pd.Timedelta(days=weekly_start)
     df_w = pd.DataFrame({"ds": days_i})
     if quick:
-        predicted = predict_season_from_dates(m, dates=df_w["ds"], name=comp_name, df_name=df_name)
+        predicted = predict_season_from_dates(m, dates=df_w["ds"], name=comp_name, df_name=df_name, meta=meta)
     else:
         predicted = m.predict_seasonal_components({df_name: df_w})[comp_name]
     days = pd.date_range(start="2017-01-01", periods=7) + pd.Timedelta(days=weekly_start)
@@ -714,7 +714,7 @@ def plot_daily(m, comp_name="daily", quick=True, ax=None, figsize=(10, 6), df_na
     dates = pd.date_range(start="2017-01-01", periods=24 * 12, freq="5min")
     df = pd.DataFrame({"ds": dates})
     if quick:
-        predicted = predict_season_from_dates(m, dates=df["ds"], name=comp_name, df_name=df_name)
+        predicted = predict_season_from_dates(m, dates=df["ds"], name=comp_name, df_name=df_name, meta=meta)
     else:
         predicted = m.predict_seasonal_components({df_name: df})[comp_name]
     artists += ax.plot(range(len(dates)), predicted, ls="-", c="#0072B2")
