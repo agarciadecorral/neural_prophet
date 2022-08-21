@@ -287,6 +287,7 @@ class AllSeason:
 class AR:
     n_lags: int
     ar_reg: Optional[float] = None
+    ar_global_local: str = "global"
 
     def __post_init__(self):
         if self.ar_reg is not None and self.ar_reg > 0:
@@ -295,6 +296,10 @@ class AR:
             self.reg_lambda = 0.0001 * self.ar_reg
         else:
             self.reg_lambda = None
+        # If ar_global_local is not in the expected set, set to "global"
+        if self.ar_global_local not in ["global", "local"]:
+            log.error("Invalid ar_global_local mode '{}'. Set to 'global'".format(self.ar_global_local))
+            self.ar_global_local = "global"
 
     def regularize(self, weights, original=False):
         """Regularization of AR coefficients

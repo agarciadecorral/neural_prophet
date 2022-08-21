@@ -57,6 +57,7 @@ class TimeNet(nn.Module):
         n_lags=0,
         num_hidden_layers=0,
         d_hidden=None,
+        ar_global_local="global",
         id_list=["__df__"],
     ):
         """
@@ -192,15 +193,26 @@ class TimeNet(nn.Module):
         self.d_hidden = (
             max(4, round((n_lags + n_forecasts) / (2.0 * (num_hidden_layers + 1)))) if d_hidden is None else d_hidden
         )
+        self.ar_global_local = ar_global_local
         if self.n_lags > 0:
             self.ar_net = nn.ModuleList()
             d_inputs = self.n_lags
-            for i in range(self.num_hidden_layers):
-                self.ar_net.append(nn.Linear(d_inputs, self.d_hidden, bias=True))
-                d_inputs = self.d_hidden
-            self.ar_net.append(nn.Linear(d_inputs, self.n_forecasts, bias=False))
-            for lay in self.ar_net:
-                nn.init.kaiming_normal_(lay.weight, mode="fan_in")
+            if self.ar_global_local == "global":
+                for i in range(self.num_hidden_layers):
+                    self.ar_net.append(nn.Linear(d_inputs, self.d_hidden, bias=True))
+                    d_inputs = self.d_hidden
+                self.ar_net.append(nn.Linear(d_inputs, self.n_forecasts, bias=False))
+                for lay in self.ar_net:
+                    nn.init.kaiming_normal_(lay.weight, mode="fan_in")
+            else:
+                for id_name in id_list:
+                    self.ar_net.append(nn.ModuleList())
+                    for i in range(self.num_hidden_layers):
+                        self.ar_net[-1].append(nn.Linear(d_inputs, self.d_hidden, bias=True))
+                        d_inputs = self.d_hidden
+                    self.ar_net[-1].append(nn.Linear(d_inputs, self.n_forecasts, bias=False))
+                    for lay in self.ar_net[-1]:
+                        nn.init.kaiming_normal_(lay.weight, mode="fan_in")
 
         # Covariates
         self.config_covar = config_covar
@@ -457,7 +469,7 @@ class TimeNet(nn.Module):
 
         return torch.sum(features * torch.unsqueeze(params, dim=0), dim=2)
 
-    def auto_regression(self, lags):
+    def auto_regression(self, lags, meta=None):
         """Computes auto-regessive model component AR-Net.
 
         Parameters
@@ -471,11 +483,23 @@ class TimeNet(nn.Module):
                 Forecast component of dims: (batch, n_forecasts)
         """
         x = lags
-        for i in range(self.num_hidden_layers + 1):
-            if i > 0:
-                x = nn.functional.relu(x)
-            x = self.ar_net[i](x)
-        return x
+        if self.ar_global_local == "global":
+            for i in range(self.num_hidden_layers + 1):
+                if i > 0:
+                    x = nn.functional.relu(x)
+                x = self.ar_net[i](x)
+            return x
+        elif self.ar_global_local == "local":
+            for i in range(self.num_hidden_layers + 1):
+                if i > 0:
+                    x = nn.functional.relu(x)
+                x = torch.unsqueeze(
+                    torch.tensor(
+                        [self.ar_net[meta_i][i](x[idx]) for idx, meta_i in enumerate(meta)], requires_grad=True
+                    ),
+                    axis=1,
+                )
+            return x
 
     def covariate(self, lags, name):
         """Compute single covariate component.
@@ -520,7 +544,7 @@ class TimeNet(nn.Module):
                 x = x + self.covariate(lags=covariates[name], name=name)
         return x
 
-    def forward(self, inputs, meta=None):
+    def forward(self, inputs, meta=None, meta_modulelist=None):
         """This method defines the model forward pass.
 
         Note
@@ -575,13 +599,16 @@ class TimeNet(nn.Module):
             name_id_dummy = locals()["self"].id_list[0]
             meta = OrderedDict()
             meta["df_name"] = [name_id_dummy for _ in range(inputs["time"].shape[0])]
-            meta = torch.tensor([self.id_dict[i] for i in meta["df_name"]])
+            meta = torch.tensor([self.id_dict[i] for i in meta["df_name"]]) or (
+                self.config_ar.ar_global_local == "local"
+            )
+            meta_modulelist = [self.id_dict[i] for i in meta["df_name"]]
 
         additive_components = torch.zeros_like(inputs["time"])
         multiplicative_components = torch.zeros_like(inputs["time"])
 
         if "lags" in inputs:
-            additive_components += self.auto_regression(lags=inputs["lags"])
+            additive_components += self.auto_regression(lags=inputs["lags"], meta=meta)
         # else: assert self.n_lags == 0
 
         if "covariates" in inputs:
@@ -655,7 +682,7 @@ class TimeNet(nn.Module):
             for name, features in inputs["seasonalities"].items():
                 components["season_{}".format(name)] = self.seasonality(features=features, name=name, meta=meta)
         if self.n_lags > 0 and "lags" in inputs:
-            components["ar"] = self.auto_regression(lags=inputs["lags"])
+            components["ar"] = self.auto_regression(lags=inputs["lags"], meta=meta)
         if self.config_covar is not None and "covariates" in inputs:
             for name, lags in inputs["covariates"].items():
                 components["lagged_regressor_{}".format(name)] = self.covariate(lags=lags, name=name)

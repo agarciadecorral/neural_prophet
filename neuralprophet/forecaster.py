@@ -292,6 +292,7 @@ class NeuralProphet:
         num_hidden_layers=0,
         d_hidden=None,
         ar_reg=None,
+        ar_global_local="global",
         learning_rate=None,
         epochs=None,
         batch_size=None,
@@ -355,6 +356,7 @@ class NeuralProphet:
         self.config_ar = configure.from_kwargs(configure.AR, kwargs)
         self.n_lags = self.config_ar.n_lags
         self.max_lags = self.n_lags
+        self.ar_global_local = self.config_ar.ar_global_local
 
         # Model
         self.config_model = configure.from_kwargs(configure.Model, kwargs)
@@ -1312,12 +1314,14 @@ class NeuralProphet:
                 # Meta as a tensor for prediction
                 if self.model.config_season is None:
                     meta_name_tensor = None
+                    meta_modulelist = None
                 elif self.model.config_season.season_global_local == "local":
                     meta = OrderedDict()
                     meta["df_name"] = [df_name for _ in range(inputs["time"].shape[0])]
                     meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
                 else:
                     meta_name_tensor = None
+                    meta_modulelist = None
 
                 for name in self.season_config.periods:
                     features = inputs["seasonalities"][name]
@@ -1774,6 +1778,7 @@ class NeuralProphet:
             n_lags=self.n_lags,
             num_hidden_layers=self.config_model.num_hidden_layers,
             d_hidden=self.config_model.d_hidden,
+            ar_global_local=self.ar_global_local,
             id_list=self.id_list,
         )
         log.debug(self.model)
@@ -2188,13 +2193,19 @@ class NeuralProphet:
         self.model.train()
         for i, (inputs, targets, meta) in enumerate(loader):
             # Run forward calculation
-            if self.model.config_season is None:
+            if self.config_ar.ar_global_local == "local":
+                meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
+                meta_modulelist = [self.model.id_dict[i] for i in meta["df_name"]]
+            elif self.model.config_season is None:
                 meta_name_tensor = None
+                meta_modulelist = None
             elif self.model.config_season.season_global_local == "local":
                 meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
+                meta_modulelist = [self.model.id_dict[i] for i in meta["df_name"]]
             else:
                 meta_name_tensor = None
-            predicted = self.model.forward(inputs, meta_name_tensor)
+                meta_modulelist = None
+            predicted = self.model.forward(inputs, meta_name_tensor, meta_modulelist)
             # store predictions in self for later network visualization
             self.train_epoch_prediction = predicted
             # Compute loss. no reduction.
@@ -2290,13 +2301,19 @@ class NeuralProphet:
         with torch.no_grad():
             self.model.eval()
             for inputs, targets, meta in loader:
-                if self.model.config_season is None:
+                if self.config_ar.ar_global_local == "local":
+                    meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
+                    meta_modulelist = [self.model.id_dict[i] for i in meta["df_name"]]
+                elif self.model.config_season is None:
                     meta_name_tensor = None
+                    meta_modulelist = None
                 elif self.model.config_season.season_global_local == "local":
                     meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
+                    meta_modulelist = [self.model.id_dict[i] for i in meta["df_name"]]
                 else:
                     meta_name_tensor = None
-                predicted = self.model.forward(inputs, meta_name_tensor)
+                    meta_modulelist = None
+                predicted = self.model.forward(inputs, meta_name_tensor, meta_modulelist)
                 val_metrics.update(predicted=predicted.detach(), target=targets.detach())
             val_metrics = val_metrics.compute(save=True)
         return val_metrics
@@ -2737,13 +2754,19 @@ class NeuralProphet:
         with torch.no_grad():
             self.model.eval()
             for inputs, _, meta in loader:
-                if self.model.config_season is None:
+                if self.config_ar.ar_global_local == "local":
+                    meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
+                    meta_modulelist = [self.model.id_dict[i] for i in meta["df_name"]]
+                elif self.model.config_season is None:
                     meta_name_tensor = None
+                    meta_modulelist = None
                 elif self.model.config_season.season_global_local == "local":
                     meta_name_tensor = torch.tensor([self.model.id_dict[i] for i in meta["df_name"]])
+                    meta_modulelist = [self.model.id_dict[i] for i in meta["df_name"]]
                 else:
                     meta_name_tensor = None
-                predicted = self.model.forward(inputs, meta_name_tensor)
+                    meta_modulelist = None
+                predicted = self.model.forward(inputs, meta_name_tensor, meta_modulelist)
                 predicted_vectors.append(predicted.detach().numpy())
 
                 if include_components:
@@ -2883,7 +2906,9 @@ class NeuralProphet:
                 forecast_0 = components[comp][0, :]
                 forecast_rest = components[comp][1:, self.n_forecasts - 1]
                 yhat = np.concatenate(([None] * self.max_lags, forecast_0, forecast_rest))
-                df_forecast = pd.concat([df_forecast, pd.Series(yhat, name=comp)], axis=1, ignore_index=False)
+                # yhat into dataframe, using df_forecast indexing
+                yhat_df = pd.Series(yhat, name=comp).set_axis(df_forecast.index)
+                df_forecast = pd.concat([df_forecast, yhat_df], axis=1, ignore_index=False)
         return df_forecast
 
 

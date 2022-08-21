@@ -116,12 +116,18 @@ def plot_parameters(m, forecast_in_focus=None, weekly_start=0, yearly_start=0, f
         for name in m.season_config.periods:
             components.append({"plot_name": "seasonality", "comp_name": name})
 
+    # AR-coefficients
+    # For local we can't use the ar_weights (@property) as the df_name is needed
+    if m.config_ar.ar_global_local == "local":
+        ar_weights_ = m.model.ar_net[m.model.id_dict[df_name]][0].weight.detach().numpy()
+    else:
+        ar_weights_ = m.model.ar_weights.detach().numpy()
     if m.n_lags > 0:
         components.append(
             {
                 "plot_name": "lagged weights",
                 "comp_name": "AR",
-                "weights": m.model.ar_weights.detach().numpy(),
+                "weights": ar_weights_,
                 "focus": forecast_in_focus,
             }
         )
