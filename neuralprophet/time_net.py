@@ -493,6 +493,7 @@ class TimeNet(nn.Module):
             for i in range(self.num_hidden_layers + 1):
                 if i > 0:
                     x = nn.functional.relu(x)
+                ## requires_grad = True ??
                 x = torch.unsqueeze(
                     torch.tensor(
                         [self.ar_net[meta_i][i](x[idx]) for idx, meta_i in enumerate(meta)], requires_grad=True
