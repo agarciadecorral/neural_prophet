@@ -494,12 +494,8 @@ class TimeNet(nn.Module):
                 if i > 0:
                     x = nn.functional.relu(x)
                 ## requires_grad = True ??
-                x = torch.unsqueeze(
-                    torch.tensor(
-                        [self.ar_net[meta_i][i](x[idx]) for idx, meta_i in enumerate(meta)], requires_grad=True
-                    ),
-                    axis=1,
-                )
+                x = torch.stack([self.ar_net[meta_i][i](x[idx]) for idx, meta_i in enumerate(meta)])
+                self.locals_vis = locals()
             return x
 
     def covariate(self, lags, name):
